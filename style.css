@@ -1,0 +1,59 @@
+
+:root{--orange:#ff8c42;--red:#ef476f;--green:#3bb273;--yellow:#ffd166;--blue:#4cc9f0;--dark:#263238}
+*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;font-family:Arial,sans-serif;color:var(--dark);background:linear-gradient(135deg,#fff7e8,#f2fff6)}.hidden{display:none!important}
+.screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.card,.panel{background:#fff;border-radius:24px;box-shadow:0 18px 50px rgba(0,0,0,.12)}
+.join-card{width:min(92vw,460px);padding:38px;text-align:center}.join-card h1{font-size:48px;color:var(--orange)}.subtitle{color:#667;font-weight:bold;margin-bottom:26px}.fruit-row{font-size:32px;letter-spacing:8px}.fruit-row.big{font-size:48px}
+label{display:block;text-align:left;margin:14px 0 7px;font-weight:bold}input{width:100%;padding:13px;border-radius:12px;border:2px solid #ddd;font-size:16px}button{border:0;cursor:pointer;font-weight:bold}
+#joinBtn{width:100%;margin-top:18px;padding:14px;border-radius:13px;font-size:18px;background:linear-gradient(135deg,var(--orange),var(--red));color:#fff}#joinMsg{min-height:22px;margin-top:10px;color:#c62828;font-weight:bold}
+.topbar{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:16px 22px;background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.08)}.topbar h1{color:var(--orange)}
+.letter-box,.timer-box{min-width:90px;padding:8px 14px;border-radius:16px;color:#fff;text-align:center}.letter-box{background:linear-gradient(135deg,var(--orange),var(--red))}.timer-box{background:linear-gradient(135deg,#4361ee,var(--blue))}
+.letter-box small,.timer-box small{display:block;font-size:10px}.letter-box strong,.timer-box strong{font-size:26px}.layout{display:grid;grid-template-columns:280px 1fr;gap:20px;max-width:1500px;margin:auto;padding:20px}
+.sidebar{display:flex;flex-direction:column;gap:14px}.panel{padding:18px}.panel h3{font-size:13px;margin-bottom:12px}.info-panel p{font-size:13px;margin:7px 0}.player-row{display:grid;grid-template-columns:1fr auto;background:#f7f7f7;padding:9px;border-radius:10px;margin-bottom:8px}.player-row.host{border-left:5px solid var(--yellow)}.score{color:var(--green);font-weight:bold}
+.primary{width:100%;padding:13px;border-radius:13px;background:var(--green);color:#fff}.lobby-card{min-height:500px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px}.lobby-card h2{font-size:34px;margin:20px 0 10px}
+.categories{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.category{background:#fff;border-radius:17px;padding:14px;box-shadow:0 10px 25px rgba(0,0,0,.07);border-left:6px solid var(--orange)}.category label{margin:0 0 8px}.stop-btn{display:block;margin:24px auto;padding:17px 46px;font-size:24px;border-radius:18px;background:#d7193f;color:#fff}
+.results-head{background:#fff;border-radius:18px;padding:18px;margin-bottom:14px}.table-wrap{overflow-x:auto;background:#fff;border-radius:18px}table{width:100%;border-collapse:collapse;min-width:1000px}th,td{padding:10px;border-bottom:1px solid #eee;text-align:center;font-size:13px}th{background:#fff2df}.answer small{display:block;font-weight:bold}.reason{font-size:10px;color:#777;margin-top:3px}.p10{color:#159447}.p5{color:#d88a00}.p0{color:#d32f2f}
+#stopOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}.stop-modal{background:#fff;border-radius:26px;padding:36px 60px;text-align:center}.stop-modal>div{font-size:70px}
+@media(max-width:850px){.layout{grid-template-columns:1fr}.categories{grid-template-columns:1fr}}
+
+.chat-panel{margin-top:0}
+#messages{
+  height:180px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  margin-bottom:10px;
+  font-size:13px;
+}
+.chat-message{
+  padding:7px 9px;
+  background:#f4f4f4;
+  border-radius:9px;
+  word-break:break-word;
+}
+.chat-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:7px;
+}
+.chat-row input{
+  padding:9px;
+  font-size:14px;
+}
+.chat-row button{
+  padding:0 12px;
+  border-radius:10px;
+  background:#4cc9f0;
+  color:#17323c;
+}
+
+.reset-btn{
+  width:100%;
+  padding:13px;
+  border-radius:13px;
+  background:linear-gradient(135deg,#ef476f,#c62828);
+  color:#fff;
+  font-size:15px;
+  box-shadow:0 6px 16px rgba(198,40,40,.18);
+}
+.reset-btn:hover{filter:brightness(.96)}
