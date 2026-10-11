@@ -8,8 +8,12 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
+
 const CATEGORIES = Object.keys(DATABASE);
+
+// 27 letras
 const LETTERS = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ'.split('');
+
 const MAX_ROUNDS = 10;
 
 app.use(express.static('.'));
@@ -26,8 +30,15 @@ let timer = null;
 
 let answersByPlayer = new Map();
 
-// Aquí se guardará el orden aleatorio de las 27 letras
-let shuffledLetters = [];
+// =====================================================
+// AQUÍ SE GUARDAN LAS 10 LETRAS DE LA PARTIDA
+// =====================================================
+
+let roundLetters = [];
+
+// =====================================================
+// NORMALIZACIÓN
+// =====================================================
 
 function normalize(v) {
   return String(v || '')
@@ -40,10 +51,17 @@ function normalize(v) {
 const DB_NORMALIZED = {};
 
 for (const [cat, items] of Object.entries(DATABASE)) {
-  DB_NORMALIZED[cat] = new Set(items.map(normalize));
+  DB_NORMALIZED[cat] = new Set(
+    items.map(normalize)
+  );
 }
 
+// =====================================================
+// VALIDACIÓN
+// =====================================================
+
 function localValidation(category, answer, letter) {
+
   const clean = String(answer || '').trim();
 
   if (!clean) {
@@ -53,14 +71,22 @@ function localValidation(category, answer, letter) {
     };
   }
 
-  if (!normalize(clean).startsWith(normalize(letter))) {
+  if (
+    !normalize(clean).startsWith(
+      normalize(letter)
+    )
+  ) {
     return {
       valid: false,
       reason: `no empieza con ${letter}`
     };
   }
 
-  if (!DB_NORMALIZED[category]?.has(normalize(clean))) {
+  if (
+    !DB_NORMALIZED[category]?.has(
+      normalize(clean)
+    )
+  ) {
     return {
       valid: false,
       reason: 'no está en la base local'
@@ -73,29 +99,50 @@ function localValidation(category, answer, letter) {
   };
 }
 
+// =====================================================
+// JUGADORES
+// =====================================================
+
 function publicPlayers() {
-  return [...players.entries()].map(([id, p]) => ({
-    id,
-    name: p.name,
-    score: scores.get(id) || 0,
-    isHost: id === hostId
-  }));
+
+  return [...players.entries()].map(
+    ([id, p]) => ({
+      id,
+      name: p.name,
+      score: scores.get(id) || 0,
+      isHost: id === hostId
+    })
+  );
 }
 
+// =====================================================
+// ESTADO
+// =====================================================
+
 function emitState() {
+
   io.emit('state', {
+
     phase,
     hostId,
     round,
     maxRounds: MAX_ROUNDS,
     currentLetter,
     remaining,
+
     categories: CATEGORIES,
+
     players: publicPlayers()
+
   });
 }
 
+// =====================================================
+// TIMER
+// =====================================================
+
 function stopTimer() {
+
   if (timer) {
     clearInterval(timer);
   }
@@ -104,67 +151,129 @@ function stopTimer() {
 }
 
 // =====================================================
-// MEZCLAR LAS 27 LETRAS
+// GENERAR 10 LETRAS ÚNICAS
 // =====================================================
 
-function shuffleLetters() {
-  shuffledLetters = [...LETTERS];
+function generateRoundLetters() {
 
-  for (let i = shuffledLetters.length - 1; i > 0; i--) {
+  const shuffled = [...LETTERS];
+
+  // Fisher-Yates
+  for (
+    let i = shuffled.length - 1;
+    i > 0;
+    i--
+  ) {
+
     const j = Math.floor(
       Math.random() * (i + 1)
     );
 
     [
-      shuffledLetters[i],
-      shuffledLetters[j]
+      shuffled[i],
+      shuffled[j]
     ] = [
-      shuffledLetters[j],
-      shuffledLetters[i]
+      shuffled[j],
+      shuffled[i]
     ];
   }
 
+  // SOLO LAS PRIMERAS 10
+  roundLetters = shuffled.slice(
+    0,
+    MAX_ROUNDS
+  );
+
+  // Seguridad adicional
+  const uniqueCheck =
+    new Set(roundLetters);
+
+  if (
+    uniqueCheck.size !== MAX_ROUNDS
+  ) {
+
+    console.error(
+      'ERROR: se detectaron letras repetidas.'
+    );
+
+    return generateRoundLetters();
+  }
+
   console.log(
-    'Orden de letras:',
-    shuffledLetters.join(', ')
+    '================================'
+  );
+
+  console.log(
+    'LETRAS DE ESTA PARTIDA:'
+  );
+
+  console.log(
+    roundLetters.join(' - ')
+  );
+
+  console.log(
+    '================================'
   );
 }
 
 // =====================================================
-// CALCULAR RESULTADOS
+// PUNTAJE
 // =====================================================
 
 function scoreRound() {
+
   stopTimer();
+
+  // Evita puntuar dos veces
+  if (phase !== 'playing') {
+    return;
+  }
 
   phase = 'results';
 
-  const plist = publicPlayers();
+  const plist =
+    publicPlayers();
+
   const rows = [];
 
   for (const p of plist) {
-    const answers = answersByPlayer.get(p.id) || {};
+
+    const answers =
+      answersByPlayer.get(p.id) || {};
 
     let roundScore = 0;
+
     const details = {};
 
-    for (const category of CATEGORIES) {
-      const answer = String(
-        answers[category] || ''
-      ).trim();
+    for (
+      const category of CATEGORIES
+    ) {
 
-      const validation = localValidation(
-        category,
-        answer,
-        currentLetter
-      );
+      const answer =
+        String(
+          answers[category] || ''
+        ).trim();
+
+      const validation =
+        localValidation(
+          category,
+          answer,
+          currentLetter
+        );
 
       if (!validation.valid) {
+
         details[category] = {
+
           answer,
+
           points: 0,
+
           valid: false,
-          reason: validation.reason
+
+          reason:
+            validation.reason
+
         };
 
         continue;
@@ -172,54 +281,91 @@ function scoreRound() {
 
       let repeated = 0;
 
-      for (const other of plist) {
-        const oa = String(
-          (answersByPlayer.get(other.id) || {})[category] || ''
-        ).trim();
+      for (
+        const other of plist
+      ) {
+
+        const oa =
+          String(
+            (
+              answersByPlayer.get(
+                other.id
+              ) || {}
+            )[category] || ''
+          ).trim();
 
         if (
           normalize(oa) &&
-          normalize(oa) === normalize(answer)
+          normalize(oa) ===
+          normalize(answer)
         ) {
+
           repeated++;
+
         }
       }
 
-      const points = repeated > 1 ? 5 : 10;
+      const points =
+        repeated > 1
+          ? 5
+          : 10;
 
       roundScore += points;
 
       details[category] = {
+
         answer,
+
         points,
+
         valid: true,
+
         reason:
           repeated > 1
             ? 'válida pero repetida'
             : 'válida y única'
+
       };
     }
 
     scores.set(
       p.id,
-      (scores.get(p.id) || 0) + roundScore
+      (scores.get(p.id) || 0)
+        + roundScore
     );
 
     rows.push({
+
       id: p.id,
+
       name: p.name,
+
       roundScore,
-      totalScore: scores.get(p.id),
+
+      totalScore:
+        scores.get(p.id),
+
       details
+
     });
   }
 
-  io.emit('round-results', {
-    letter: currentLetter,
-    round,
-    categories: CATEGORIES,
-    rows
-  });
+  io.emit(
+    'round-results',
+    {
+
+      letter:
+        currentLetter,
+
+      round,
+
+      categories:
+        CATEGORIES,
+
+      rows
+
+    }
+  );
 
   emitState();
 }
@@ -229,301 +375,567 @@ function scoreRound() {
 // =====================================================
 
 function startRound() {
-  if (round >= MAX_ROUNDS) {
+
+  if (
+    round >= MAX_ROUNDS
+  ) {
+
     phase = 'results';
+
     emitState();
+
     return;
   }
 
   stopTimer();
 
-  // Usa la letra correspondiente al orden ya mezclado.
-  // Ronda 1 = posición 0
-  // Ronda 2 = posición 1
-  // etc.
-  currentLetter = shuffledLetters[round];
+  // ================================================
+  // NO SORTEA NADA AQUÍ
+  // SOLO TOMA LA LETRA YA GENERADA
+  // ================================================
+
+  const nextLetter =
+    roundLetters[round];
+
+  if (!nextLetter) {
+
+    console.error(
+      'No existe letra para la ronda.'
+    );
+
+    return;
+  }
+
+  // Seguridad:
+  // comprobar que no aparezca antes
+  const previousLetters =
+    roundLetters.slice(
+      0,
+      round
+    );
+
+  if (
+    previousLetters.includes(
+      nextLetter
+    )
+  ) {
+
+    console.error(
+      'LETRA REPETIDA DETECTADA:',
+      nextLetter
+    );
+
+    generateRoundLetters();
+
+    round = 0;
+
+    return startRound();
+  }
+
+  currentLetter =
+    nextLetter;
 
   round++;
 
   phase = 'playing';
-  answersByPlayer = new Map();
+
+  answersByPlayer =
+    new Map();
+
   remaining = 90;
 
   console.log(
-    `Ronda ${round}/${MAX_ROUNDS} - Letra: ${currentLetter}`
+    `RONDA ${round}/10 -> ${currentLetter}`
   );
 
-  io.emit('round-started', {
-    round,
-    letter: currentLetter,
-    remaining,
-    categories: CATEGORIES
-  });
+  console.log(
+    'Secuencia:',
+    roundLetters.join(' - ')
+  );
+
+  io.emit(
+    'round-started',
+    {
+
+      round,
+
+      letter:
+        currentLetter,
+
+      remaining,
+
+      categories:
+        CATEGORIES
+
+    }
+  );
 
   emitState();
 
-  timer = setInterval(() => {
-    remaining--;
+  timer =
+    setInterval(
+      () => {
 
-    io.emit('timer', remaining);
+        remaining--;
 
-    if (remaining <= 0) {
-      scoreRound();
-    }
-  }, 1000);
+        io.emit(
+          'timer',
+          remaining
+        );
+
+        if (
+          remaining <= 0
+        ) {
+
+          scoreRound();
+
+        }
+
+      },
+      1000
+    );
 }
 
 // =====================================================
-// SOCKET.IO
+// SOCKET
 // =====================================================
 
-io.on('connection', socket => {
+io.on(
+  'connection',
+  socket => {
 
-  // ---------------------------------------------------
-  // INGRESAR
-  // ---------------------------------------------------
+    // =================================================
+    // JOIN
+    // =================================================
 
-  socket.on('join', ({ name }) => {
-    const clean = String(name || '')
-      .trim()
-      .slice(0, 20);
+    socket.on(
+      'join',
+      ({ name }) => {
 
-    if (!clean) {
-      socket.emit('join-result', {
-        ok: false,
-        message: 'Ingresa tu nombre.'
-      });
+        const clean =
+          String(name || '')
+            .trim()
+            .slice(0, 20);
 
-      return;
-    }
+        if (!clean) {
 
-    players.set(socket.id, {
-      name: clean
-    });
+          socket.emit(
+            'join-result',
+            {
 
-    scores.set(socket.id, 0);
+              ok: false,
 
-    if (!hostId) {
-      hostId = socket.id;
-    }
+              message:
+                'Ingresa tu nombre.'
 
-    socket.emit('join-result', {
-      ok: true,
-      id: socket.id
-    });
+            }
+          );
 
-    emitState();
-  });
+          return;
+        }
 
-  // ---------------------------------------------------
-  // INICIAR PARTIDA
-  // ---------------------------------------------------
+        players.set(
+          socket.id,
+          {
+            name: clean
+          }
+        );
 
-  socket.on('start-game', () => {
-    if (socket.id !== hostId) {
-      return;
-    }
+        scores.set(
+          socket.id,
+          0
+        );
 
-    if (phase !== 'lobby') {
-      return;
-    }
+        if (!hostId) {
 
-    round = 0;
-    currentLetter = null;
-    remaining = 90;
-    answersByPlayer = new Map();
+          hostId =
+            socket.id;
 
-    // Aquí se mezclan las 27 letras una sola vez
-    // al comenzar la partida.
-    shuffleLetters();
+        }
 
-    for (const id of players.keys()) {
-      scores.set(id, 0);
-    }
+        socket.emit(
+          'join-result',
+          {
 
-    console.log('Nueva partida iniciada.');
+            ok: true,
 
-    startRound();
-  });
+            id:
+              socket.id
 
-  // ---------------------------------------------------
-  // SIGUIENTE RONDA
-  // ---------------------------------------------------
+          }
+        );
 
-  socket.on('next-round', () => {
-    if (
-      socket.id !== hostId ||
-      phase !== 'results' ||
-      round >= MAX_ROUNDS
-    ) {
-      return;
-    }
-
-    startRound();
-  });
-
-  // ---------------------------------------------------
-  // REINICIAR PARTIDA
-  // ---------------------------------------------------
-
-  socket.on('reset-game', () => {
-    if (socket.id !== hostId) {
-      return;
-    }
-
-    stopTimer();
-
-    phase = 'lobby';
-    round = 0;
-    currentLetter = null;
-    remaining = 90;
-
-    answersByPlayer = new Map();
-
-    // Se elimina el orden anterior
-    shuffledLetters = [];
-
-    for (const id of players.keys()) {
-      scores.set(id, 0);
-    }
-
-    console.log('Partida reiniciada.');
-
-    io.emit('game-reset');
-
-    emitState();
-  });
-
-  // ---------------------------------------------------
-  // GUARDAR RESPUESTAS
-  // ---------------------------------------------------
-
-  socket.on('submit-answers', answers => {
-    if (
-      phase !== 'playing' ||
-      !players.has(socket.id)
-    ) {
-      return;
-    }
-
-    const clean = {};
-
-    for (const c of CATEGORIES) {
-      clean[c] = String(
-        answers?.[c] || ''
-      ).slice(0, 60);
-    }
-
-    answersByPlayer.set(
-      socket.id,
-      clean
-    );
-  });
-
-  // ---------------------------------------------------
-  // STOP
-  // ---------------------------------------------------
-
-  socket.on('stop-round', answers => {
-    if (
-      phase !== 'playing' ||
-      !players.has(socket.id)
-    ) {
-      return;
-    }
-
-    const clean = {};
-
-    for (const c of CATEGORIES) {
-      clean[c] = String(
-        answers?.[c] || ''
-      ).slice(0, 60);
-    }
-
-    answersByPlayer.set(
-      socket.id,
-      clean
+        emitState();
+      }
     );
 
-    io.emit('stop-called', {
-      by: players.get(socket.id).name
-    });
+    // =================================================
+    // START GAME
+    // =================================================
 
-    scoreRound();
-  });
+    socket.on(
+      'start-game',
+      () => {
 
-  // ---------------------------------------------------
-  // CHAT
-  // ---------------------------------------------------
+        if (
+          socket.id !== hostId
+        ) {
+          return;
+        }
 
-  socket.on('chat-message', msg => {
-    if (!players.has(socket.id)) {
-      return;
-    }
+        // No permite iniciar otra partida
+        // encima de una existente
+        if (
+          phase !== 'lobby'
+        ) {
+          return;
+        }
 
-    const text = String(msg || '')
-      .trim()
-      .slice(0, 140);
+        stopTimer();
 
-    if (text) {
-      io.emit('chat-message', {
-        name: players.get(socket.id).name,
-        message: text
-      });
-    }
-  });
+        round = 0;
 
-  // ---------------------------------------------------
-  // DESCONEXIÓN
-  // ---------------------------------------------------
+        currentLetter = null;
 
-  socket.on('disconnect', () => {
-    const wasHost =
-      socket.id === hostId;
+        remaining = 90;
 
-    players.delete(socket.id);
+        answersByPlayer =
+          new Map();
 
-    scores.delete(socket.id);
+        // =============================================
+        // GENERA LAS 10 LETRAS SOLO AQUÍ
+        // =============================================
 
-    answersByPlayer.delete(socket.id);
+        generateRoundLetters();
 
-    if (wasHost) {
-      hostId =
-        players.keys().next().value || null;
-    }
+        for (
+          const id of
+          players.keys()
+        ) {
 
-    if (players.size === 0) {
-      stopTimer();
+          scores.set(
+            id,
+            0
+          );
+        }
 
-      phase = 'lobby';
-      round = 0;
-      currentLetter = null;
-      remaining = 90;
+        console.log(
+          'NUEVA PARTIDA'
+        );
 
-      answersByPlayer = new Map();
+        startRound();
+      }
+    );
 
-      shuffledLetters = [];
+    // =================================================
+    // NEXT ROUND
+    // =================================================
 
-      console.log(
-        'Sala vacía. Partida reiniciada.'
-      );
-    }
+    socket.on(
+      'next-round',
+      () => {
 
-    emitState();
-  });
+        if (
+          socket.id !== hostId
+        ) {
+          return;
+        }
 
-});
+        if (
+          phase !== 'results'
+        ) {
+          return;
+        }
+
+        if (
+          round >= MAX_ROUNDS
+        ) {
+          return;
+        }
+
+        startRound();
+      }
+    );
+
+    // =================================================
+    // RESET GAME
+    // =================================================
+
+    socket.on(
+      'reset-game',
+      () => {
+
+        if (
+          socket.id !== hostId
+        ) {
+          return;
+        }
+
+        stopTimer();
+
+        phase =
+          'lobby';
+
+        round = 0;
+
+        currentLetter =
+          null;
+
+        remaining = 90;
+
+        answersByPlayer =
+          new Map();
+
+        // Elimina la secuencia vieja
+        roundLetters = [];
+
+        for (
+          const id of
+          players.keys()
+        ) {
+
+          scores.set(
+            id,
+            0
+          );
+        }
+
+        console.log(
+          'PARTIDA REINICIADA'
+        );
+
+        io.emit(
+          'game-reset'
+        );
+
+        emitState();
+      }
+    );
+
+    // =================================================
+    // SUBMIT ANSWERS
+    // =================================================
+
+    socket.on(
+      'submit-answers',
+      answers => {
+
+        if (
+          phase !== 'playing'
+        ) {
+          return;
+        }
+
+        if (
+          !players.has(
+            socket.id
+          )
+        ) {
+          return;
+        }
+
+        const clean = {};
+
+        for (
+          const c of
+          CATEGORIES
+        ) {
+
+          clean[c] =
+            String(
+              answers?.[c]
+              || ''
+            ).slice(
+              0,
+              60
+            );
+        }
+
+        answersByPlayer.set(
+          socket.id,
+          clean
+        );
+      }
+    );
+
+    // =================================================
+    // STOP
+    // =================================================
+
+    socket.on(
+      'stop-round',
+      answers => {
+
+        if (
+          phase !== 'playing'
+        ) {
+          return;
+        }
+
+        if (
+          !players.has(
+            socket.id
+          )
+        ) {
+          return;
+        }
+
+        const clean = {};
+
+        for (
+          const c of
+          CATEGORIES
+        ) {
+
+          clean[c] =
+            String(
+              answers?.[c]
+              || ''
+            ).slice(
+              0,
+              60
+            );
+        }
+
+        answersByPlayer.set(
+          socket.id,
+          clean
+        );
+
+        io.emit(
+          'stop-called',
+          {
+
+            by:
+              players.get(
+                socket.id
+              ).name
+
+          }
+        );
+
+        scoreRound();
+      }
+    );
+
+    // =================================================
+    // CHAT
+    // =================================================
+
+    socket.on(
+      'chat-message',
+      msg => {
+
+        if (
+          !players.has(
+            socket.id
+          )
+        ) {
+          return;
+        }
+
+        const text =
+          String(msg || '')
+            .trim()
+            .slice(
+              0,
+              140
+            );
+
+        if (text) {
+
+          io.emit(
+            'chat-message',
+            {
+
+              name:
+                players.get(
+                  socket.id
+                ).name,
+
+              message:
+                text
+
+            }
+          );
+        }
+      }
+    );
+
+    // =================================================
+    // DISCONNECT
+    // =================================================
+
+    socket.on(
+      'disconnect',
+      () => {
+
+        const wasHost =
+          socket.id === hostId;
+
+        players.delete(
+          socket.id
+        );
+
+        scores.delete(
+          socket.id
+        );
+
+        answersByPlayer.delete(
+          socket.id
+        );
+
+        if (wasHost) {
+
+          hostId =
+            players.keys()
+              .next()
+              .value
+            || null;
+
+        }
+
+        if (
+          players.size === 0
+        ) {
+
+          stopTimer();
+
+          phase =
+            'lobby';
+
+          round = 0;
+
+          currentLetter =
+            null;
+
+          remaining = 90;
+
+          answersByPlayer =
+            new Map();
+
+          roundLetters = [];
+
+        }
+
+        emitState();
+      }
+    );
+  }
+);
 
 // =====================================================
-// INICIAR SERVIDOR
+// SERVER
 // =====================================================
 
 server.listen(
   PORT,
   '0.0.0.0',
   () => {
+
     console.log(
-      `Tutifruti Local DB activo en puerto ${PORT}`
+      `Tutifruti activo en puerto ${PORT}`
     );
+
   }
 );
