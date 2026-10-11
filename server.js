@@ -26,11 +26,10 @@ let timer = null;
 
 let answersByPlayer = new Map();
 
-// NUEVO:
-// Guarda las letras usadas durante la partida
-let usedLetters = [];
+// Aquí se guardará el orden aleatorio de las 27 letras
+let shuffledLetters = [];
 
-function normalize(v){
+function normalize(v) {
   return String(v || '')
     .trim()
     .toLocaleLowerCase('es')
@@ -44,24 +43,24 @@ for (const [cat, items] of Object.entries(DATABASE)) {
   DB_NORMALIZED[cat] = new Set(items.map(normalize));
 }
 
-function localValidation(category, answer, letter){
+function localValidation(category, answer, letter) {
   const clean = String(answer || '').trim();
 
-  if(!clean){
+  if (!clean) {
     return {
       valid: false,
       reason: 'vacío'
     };
   }
 
-  if(!normalize(clean).startsWith(normalize(letter))){
+  if (!normalize(clean).startsWith(normalize(letter))) {
     return {
       valid: false,
       reason: `no empieza con ${letter}`
     };
   }
 
-  if(!DB_NORMALIZED[category]?.has(normalize(clean))){
+  if (!DB_NORMALIZED[category]?.has(normalize(clean))) {
     return {
       valid: false,
       reason: 'no está en la base local'
@@ -74,7 +73,7 @@ function localValidation(category, answer, letter){
   };
 }
 
-function publicPlayers(){
+function publicPlayers() {
   return [...players.entries()].map(([id, p]) => ({
     id,
     name: p.name,
@@ -83,7 +82,7 @@ function publicPlayers(){
   }));
 }
 
-function emitState(){
+function emitState() {
   io.emit('state', {
     phase,
     hostId,
@@ -96,43 +95,46 @@ function emitState(){
   });
 }
 
-function stopTimer(){
-  if(timer){
+function stopTimer() {
+  if (timer) {
     clearInterval(timer);
   }
 
   timer = null;
 }
 
-// NUEVO:
-// Obtiene una letra que todavía no haya salido
-function getRandomUnusedLetter(){
+// =====================================================
+// MEZCLAR LAS 27 LETRAS
+// =====================================================
 
-  let availableLetters = LETTERS.filter(
-    letter => !usedLetters.includes(letter)
-  );
+function shuffleLetters() {
+  shuffledLetters = [...LETTERS];
 
-  // Seguridad:
-  // si alguna vez se usan todas las letras,
-  // se vuelve a comenzar.
-  if(availableLetters.length === 0){
-    usedLetters = [];
-    availableLetters = [...LETTERS];
+  for (let i = shuffledLetters.length - 1; i > 0; i--) {
+    const j = Math.floor(
+      Math.random() * (i + 1)
+    );
+
+    [
+      shuffledLetters[i],
+      shuffledLetters[j]
+    ] = [
+      shuffledLetters[j],
+      shuffledLetters[i]
+    ];
   }
 
-  const randomIndex = Math.floor(
-    Math.random() * availableLetters.length
+  console.log(
+    'Orden de letras:',
+    shuffledLetters.join(', ')
   );
-
-  const selectedLetter = availableLetters[randomIndex];
-
-  usedLetters.push(selectedLetter);
-
-  return selectedLetter;
 }
 
-function scoreRound(){
+// =====================================================
+// CALCULAR RESULTADOS
+// =====================================================
 
+function scoreRound() {
   stopTimer();
 
   phase = 'results';
@@ -140,16 +142,13 @@ function scoreRound(){
   const plist = publicPlayers();
   const rows = [];
 
-  for(const p of plist){
-
+  for (const p of plist) {
     const answers = answersByPlayer.get(p.id) || {};
 
     let roundScore = 0;
-
     const details = {};
 
-    for(const category of CATEGORIES){
-
+    for (const category of CATEGORIES) {
       const answer = String(
         answers[category] || ''
       ).trim();
@@ -160,8 +159,7 @@ function scoreRound(){
         currentLetter
       );
 
-      if(!validation.valid){
-
+      if (!validation.valid) {
         details[category] = {
           answer,
           points: 0,
@@ -174,16 +172,15 @@ function scoreRound(){
 
       let repeated = 0;
 
-      for(const other of plist){
-
+      for (const other of plist) {
         const oa = String(
           (answersByPlayer.get(other.id) || {})[category] || ''
         ).trim();
 
-        if(
+        if (
           normalize(oa) &&
           normalize(oa) === normalize(answer)
-        ){
+        ) {
           repeated++;
         }
       }
@@ -196,9 +193,10 @@ function scoreRound(){
         answer,
         points,
         valid: true,
-        reason: repeated > 1
-          ? 'válida pero repetida'
-          : 'válida y única'
+        reason:
+          repeated > 1
+            ? 'válida pero repetida'
+            : 'válida y única'
       };
     }
 
@@ -226,31 +224,34 @@ function scoreRound(){
   emitState();
 }
 
-function startRound(){
+// =====================================================
+// INICIAR RONDA
+// =====================================================
 
-  if(round >= MAX_ROUNDS){
-
+function startRound() {
+  if (round >= MAX_ROUNDS) {
     phase = 'results';
-
     emitState();
-
     return;
   }
 
   stopTimer();
 
+  // Usa la letra correspondiente al orden ya mezclado.
+  // Ronda 1 = posición 0
+  // Ronda 2 = posición 1
+  // etc.
+  currentLetter = shuffledLetters[round];
+
   round++;
 
   phase = 'playing';
-
   answersByPlayer = new Map();
-
-  // NUEVO:
-  // La letra se obtiene de las que todavía
-  // no han sido utilizadas.
-  currentLetter = getRandomUnusedLetter();
-
   remaining = 90;
+
+  console.log(
+    `Ronda ${round}/${MAX_ROUNDS} - Letra: ${currentLetter}`
+  );
 
   io.emit('round-started', {
     round,
@@ -262,28 +263,32 @@ function startRound(){
   emitState();
 
   timer = setInterval(() => {
-
     remaining--;
 
     io.emit('timer', remaining);
 
-    if(remaining <= 0){
+    if (remaining <= 0) {
       scoreRound();
     }
-
   }, 1000);
 }
 
+// =====================================================
+// SOCKET.IO
+// =====================================================
+
 io.on('connection', socket => {
 
-  socket.on('join', ({ name }) => {
+  // ---------------------------------------------------
+  // INGRESAR
+  // ---------------------------------------------------
 
+  socket.on('join', ({ name }) => {
     const clean = String(name || '')
       .trim()
       .slice(0, 20);
 
-    if(!clean){
-
+    if (!clean) {
       socket.emit('join-result', {
         ok: false,
         message: 'Ingresa tu nombre.'
@@ -298,7 +303,7 @@ io.on('connection', socket => {
 
     scores.set(socket.id, 0);
 
-    if(!hostId){
+    if (!hostId) {
       hostId = socket.id;
     }
 
@@ -310,94 +315,103 @@ io.on('connection', socket => {
     emitState();
   });
 
+  // ---------------------------------------------------
+  // INICIAR PARTIDA
+  // ---------------------------------------------------
 
   socket.on('start-game', () => {
+    if (socket.id !== hostId) {
+      return;
+    }
 
-    if(socket.id !== hostId){
+    if (phase !== 'lobby') {
       return;
     }
 
     round = 0;
-
-    // NUEVO:
-    // Al comenzar una partida nueva
-    // se limpia el historial de letras.
-    usedLetters = [];
-
     currentLetter = null;
+    remaining = 90;
+    answersByPlayer = new Map();
 
-    for(const id of players.keys()){
+    // Aquí se mezclan las 27 letras una sola vez
+    // al comenzar la partida.
+    shuffleLetters();
+
+    for (const id of players.keys()) {
       scores.set(id, 0);
     }
+
+    console.log('Nueva partida iniciada.');
 
     startRound();
   });
 
+  // ---------------------------------------------------
+  // SIGUIENTE RONDA
+  // ---------------------------------------------------
 
   socket.on('next-round', () => {
-
-    if(
+    if (
       socket.id !== hostId ||
       phase !== 'results' ||
       round >= MAX_ROUNDS
-    ){
+    ) {
       return;
     }
 
     startRound();
   });
 
+  // ---------------------------------------------------
+  // REINICIAR PARTIDA
+  // ---------------------------------------------------
 
   socket.on('reset-game', () => {
-
-    if(socket.id !== hostId){
+    if (socket.id !== hostId) {
       return;
     }
 
     stopTimer();
 
     phase = 'lobby';
-
     round = 0;
-
     currentLetter = null;
-
-    // NUEVO:
-    // Al reiniciar también se habilitan
-    // nuevamente todas las letras.
-    usedLetters = [];
-
     remaining = 90;
 
     answersByPlayer = new Map();
 
-    for(const id of players.keys()){
+    // Se elimina el orden anterior
+    shuffledLetters = [];
+
+    for (const id of players.keys()) {
       scores.set(id, 0);
     }
+
+    console.log('Partida reiniciada.');
 
     io.emit('game-reset');
 
     emitState();
   });
 
+  // ---------------------------------------------------
+  // GUARDAR RESPUESTAS
+  // ---------------------------------------------------
 
   socket.on('submit-answers', answers => {
-
-    if(
+    if (
       phase !== 'playing' ||
       !players.has(socket.id)
-    ){
+    ) {
       return;
     }
 
     const clean = {};
 
-    for(const c of CATEGORIES){
-
+    for (const c of CATEGORIES) {
       clean[c] = String(
         answers?.[c] || ''
       ).slice(0, 60);
-
     }
 
     answersByPlayer.set(
@@ -406,24 +420,24 @@ io.on('connection', socket => {
     );
   });
 
+  // ---------------------------------------------------
+  // STOP
+  // ---------------------------------------------------
 
   socket.on('stop-round', answers => {
-
-    if(
+    if (
       phase !== 'playing' ||
       !players.has(socket.id)
-    ){
+    ) {
       return;
     }
 
     const clean = {};
 
-    for(const c of CATEGORIES){
-
+    for (const c of CATEGORIES) {
       clean[c] = String(
         answers?.[c] || ''
       ).slice(0, 60);
-
     }
 
     answersByPlayer.set(
@@ -438,10 +452,12 @@ io.on('connection', socket => {
     scoreRound();
   });
 
+  // ---------------------------------------------------
+  // CHAT
+  // ---------------------------------------------------
 
   socket.on('chat-message', msg => {
-
-    if(!players.has(socket.id)){
+    if (!players.has(socket.id)) {
       return;
     }
 
@@ -449,19 +465,19 @@ io.on('connection', socket => {
       .trim()
       .slice(0, 140);
 
-    if(text){
-
+    if (text) {
       io.emit('chat-message', {
         name: players.get(socket.id).name,
         message: text
       });
-
     }
   });
 
+  // ---------------------------------------------------
+  // DESCONEXIÓN
+  // ---------------------------------------------------
 
   socket.on('disconnect', () => {
-
     const wasHost =
       socket.id === hostId;
 
@@ -471,27 +487,26 @@ io.on('connection', socket => {
 
     answersByPlayer.delete(socket.id);
 
-    if(wasHost){
-
+    if (wasHost) {
       hostId =
         players.keys().next().value || null;
-
     }
 
-    if(players.size === 0){
-
+    if (players.size === 0) {
       stopTimer();
 
       phase = 'lobby';
-
       round = 0;
-
       currentLetter = null;
-
-      // NUEVO
-      usedLetters = [];
-
       remaining = 90;
+
+      answersByPlayer = new Map();
+
+      shuffledLetters = [];
+
+      console.log(
+        'Sala vacía. Partida reiniciada.'
+      );
     }
 
     emitState();
@@ -499,15 +514,16 @@ io.on('connection', socket => {
 
 });
 
+// =====================================================
+// INICIAR SERVIDOR
+// =====================================================
 
 server.listen(
   PORT,
   '0.0.0.0',
   () => {
-
     console.log(
       `Tutifruti Local DB activo en puerto ${PORT}`
     );
-
   }
 );
